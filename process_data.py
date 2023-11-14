@@ -10,22 +10,27 @@ Original file is located at
 # from google.colab import drive
 # drive.mount('/content/drive/')
 
-# %cd /content/drive/MyDrive/thesis-relation-extraction-vn/
-# ! pip3 install py_vncorenlp
-# import py_vncorenlp
-# vncorenlp_md = py_vncorenlp.VnCoreNLP(save_dir='/content/drive/MyDrive/thesis-relation-extraction-vn/vncorenlp/')
+# Commented out IPython magic to ensure Python compatibility.
+# %cd /content/drive/MyDrive/thesis-relation-extraction-vn
 
-# %cd /content/drive/MyDrive/thesis-relation-extraction-vn/
+# ! pip3 install py_vncorenlp
+# ! pip3 install transformers
+
+import py_vncorenlp
+vncorenlp_md = py_vncorenlp.VnCoreNLP(save_dir='/content/drive/MyDrive/thesis-relation-extraction-vn/vncorenlp/')
+
+import torch
+from transformers import AutoModel, AutoTokenizer
+
+phobert_model = AutoModel.from_pretrained("vinai/phobert-base-v2")
+phobert_tokenizer = AutoTokenizer.from_pretrained("vinai/phobert-base-v2")
 
 import pandas as pd
 import numpy as np
 import re
 import json
 import pickle
-
-# import spacy
-# from spacy import displacy
-# nlp = spacy.load("en_core_web_sm")
+import torch
 
 import networkx as nx
 from networkx import NetworkXNoPath
@@ -36,6 +41,31 @@ from keras.utils import pad_sequences
 from tensorflow.keras.utils import to_categorical
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
+
+def get_shortest_path(edges, a, b):
+    edges=[[x[0], x[1]] for x in edges]
+    und_graph = nx.Graph(edges)
+    try:
+        und_path=nx.shortest_path(und_graph, source=a, target=b)
+    except NetworkXNoPath:
+        return [], None
+    except NodeNotFound:
+        return [], None
+    else:
+        try: #wwtffffff
+          edges=[edges[i] for i in und_path]
+          di_graph=nx.DiGraph(edges)
+          for node in und_path:
+              try:
+                  di_path1=nx.shortest_path(di_graph, source=a, target=node)
+                  di_path2=nx.shortest_path(di_graph, source=b, target=node)
+              except NetworkXNoPath:
+                  pass
+              else:
+                  return und_path, node
+        except:
+            pass
+        return [], None
 
 def split_entity_and_create_edges(org_sentence):
     org_sentence=' '.join(re.findall('<e1>|<\/e1>|<e2>|<\/e2>|\w+', org_sentence)) # space processing -> still remaining entity mark
@@ -111,7 +141,6 @@ def split_entity_and_create_edges_ver2(org_sentence):
         precessed_edges[i][0]=mapping[precessed_edges[i][0]]
         precessed_edges[i][1]=mapping[precessed_edges[i][1]]
 
-
     epos=[[-1, -1], [-1, -1]]
     # print(epos_tmp)
     epos[0][0]=mapping[epos_tmp[0]]
@@ -143,39 +172,6 @@ def create_relative_distance(sentence_data):
     return e1_distance, e2_distance
 
 
-def matrix_from_edges(edges, n, initial_val):
-    matrix=[[initial_val]*n for i in range(n)]
-    for edge in edges:
-        matrix[edge[0]][edge[1]]=edge[2]
-    return matrix
-
-
-def get_shortest_path(edges, a, b):
-    edges=[[x[0], x[1]] for x in edges]
-    und_graph = nx.Graph(edges)
-    try:
-        und_path=nx.shortest_path(und_graph, source=a, target=b)
-    except NetworkXNoPath:
-        return [], None
-    except NodeNotFound:
-        return [], None
-    else:
-        try: #wwtffffff
-          edges=[edges[i] for i in und_path]
-          di_graph=nx.DiGraph(edges)
-          for node in und_path:
-              try:
-                  di_path1=nx.shortest_path(di_graph, source=a, target=node)
-                  di_path2=nx.shortest_path(di_graph, source=b, target=node)
-              except NetworkXNoPath:
-                  pass
-              else:
-                  return und_path, node
-        except:
-            pass
-        return [], None
-
-
 def path_between_2entity(sentence_data, edges):
     first_e1_pos=sentence_data['epos'][0][0]
     first_e2_pos=sentence_data['epos'][1][0]
@@ -193,7 +189,8 @@ def path_between_2entity(sentence_data, edges):
 
 
 SKIP=[] #dev only
-def get_feature(sentences):
+def generate_features(sentences):
+    # tokenize the text using VNNLPCORE, relative distance, shortest dependency path with grammar relation
     sentences_data=[]
     for i, s in enumerate(sentences):
         try:
@@ -220,7 +217,6 @@ def get_feature(sentences):
 
     e1_distance, e2_distance, grammar, shortest_path=[], [], [], []
     for sentence_data in sentences_data:
-
         #distant
         distance=create_relative_distance(sentence_data)
         e1_distance.append(distance[0])
@@ -228,27 +224,16 @@ def get_feature(sentences):
 
         edges=sentence_data['edges']
         grammar.append(edges)
-
         shortest_path.append(path_between_2entity(sentence_data, edges))
 
     sentences=[x['sentence'] for x in sentences_data]
     return sentences, e1_distance, e2_distance, grammar, shortest_path
 
-def write_log(*messages):
-    with open('/content/drive/MyDrive/thesis-relation-extraction-vn/logs.log', 'a') as rf:
-      for message in messages:
-        print(str(message))
-
 class RE_DataEncoder():
-    def __init__(self, vocab_size, max_len, sentences_train, grammar_train, label_train):
+    def __init__(self, vocab_size, max_len, org_max_len, grammar_train, label_train):
         self.max_len=max_len
+        self.org_max_len=org_max_len
         self.vocab_size=vocab_size
-
-        #for the sentences
-        self.tokenizer = Tokenizer(num_words=vocab_size, filters='!"#$%&()*+,-./:;=?@[]^`{|}~', lower=True, oov_token=1)
-        self.tokenizer.fit_on_texts(sentences_train)
-        self.word_index = self.tokenizer.word_index
-        self.word_size = len(self.word_index) #different from vocab size
 
         #for the grammar
         grammar_type=[]
@@ -262,20 +247,32 @@ class RE_DataEncoder():
         self.dict_labels={i: w for i, w in enumerate(list(self.lbencoder.classes_))}
 
 
-    def encode(self, sentences, e1_distance, e2_distance, grammar, shortest_path):
-        #sentence
-        sequences = self.tokenizer.texts_to_sequences(sentences)
-        sentences_encode = pad_sequences(sequences, maxlen=self.max_len, value=0, padding='post')
+    def encode_sentences(self, sentences):
+        input_ids=[]
+        mask_ids=[]
+        for sentence in sentences:
+            input_id = list(phobert_tokenizer.encode(sentence))[1:-1] # remove CLS and SEP token
+            mask_id = [1]*len(input_id)
+            while(len(input_id)<self.max_len):
+                input_id.append(0)
+                mask_id.append(0)
+            input_id = input_id[:self.max_len]
+            mask_id = mask_id[:self.max_len]
 
-        #relative distance
-        e1_distance=pad_sequences(e1_distance, maxlen=self.max_len, value=999, padding='post')
-        e2_distance=pad_sequences(e2_distance, maxlen=self.max_len, value=999, padding='post')
-        e1_distance+=self.max_len
-        e2_distance+=self.max_len
-        e1_distance[e1_distance==999+self.max_len]=0
-        e2_distance[e2_distance==999+self.max_len]=0
+            input_ids.append(input_id)
+            mask_ids.append(mask_id)
 
-        #grammar relantion
+        return np.array(input_ids), np.array(mask_ids)
+
+
+    def encode_distances(self, distances):
+        distances=pad_sequences(distances, maxlen=self.max_len, value=999, padding='post')
+        distances+=self.org_max_len+1
+        distances[distances==1000+self.org_max_len]=0
+        return distances
+
+
+    def encode_grammars(self, grammars):
         grammar_matrix=[]
         for edge_list in grammar:
             n=len(edge_list)
@@ -289,18 +286,36 @@ class RE_DataEncoder():
             grammar_matrix.append(matrix)
 
         grammar_matrix=pad_sequences(grammar_matrix, maxlen=self.max_len, value=0, padding='post')
+        return grammar_matrix
 
-        #shortest path
+
+    def encode_SDP(self, shortest_path):
         for i in range(len(shortest_path)):
             for j in range(len(shortest_path[i])):
                 if shortest_path[i][j]=='N':
                     shortest_path[i][j]=1
                 else:
-                    shortest_path[i][j]+=self.max_len+1
+                    shortest_path[i][j]+=self.org_max_len+1
 
         shortest_path=pad_sequences(shortest_path, maxlen=self.max_len, value=0, padding='post')
+        return shortest_path
 
-        return sentences_encode, e1_distance, e2_distance, grammar_matrix, shortest_path
+
+    def encode(self, sentences, e1_distances, e2_distances, grammar, shortest_path):
+        input_ids, mask_ids=self.encode_sentences(sentences)
+
+        #relative distance
+        e1_distances=self.encode_distances(e1_distances)
+        e2_distances=self.encode_distances(e2_distances)
+
+        #grammar relantion
+        grammar_matrix=self.encode_grammars(grammar)
+
+        #shortest path
+        shortest_path=self.encode_SDP(shortest_path)
+
+        return input_ids, mask_ids, e1_distances, e2_distances, grammar_matrix, shortest_path
+
 
     def encode_label(self, label_name):
         label = self.lbencoder.transform(label_name)
@@ -308,37 +323,19 @@ class RE_DataEncoder():
         label = np.array(label)
         return label
 
-# with open('data/'+'train'+'_features.json', 'r') as r:
-#                 data=json.load(r)
-# sentences=data['sentences']
-# e1_distance=data['e1_distance']
-# e2_distance=data['e2_distance']
-# grammar=data['grammar']
-# shortest_path=data['shortest_path']
-# label=data['label']
-
-# tokenizer = Tokenizer(num_words=1, filters='!"#$%&()*+,-./:;=?@[]^`{|}~', lower=True, oov_token=1) # bo dau _
-# tokenizer.fit_on_texts(sentences)
-# word_index = tokenizer.word_index
-# word_size = len(word_index)
-# word_size
-
-# import seaborn as sns
-# print(max([len(x.split()) for x in sentences]))
-# sns.histplot([len(x.split()) for x in sentences]);
-
 SKIP=[]
 if __name__ == "__main__":
 
     vocab_size=11664
     max_len = 40
+    org_max_len = 90
     read_new_data=False
 
 
-    for type in ['test']:
+    for type in ['train', 'test']:
         if read_new_data==True:
             data = pd.read_csv('data/'+type+'.csv')
-            sentences, e1_distance, e2_distance, grammar, shortest_path=get_feature(data['sentence_vi'])
+            sentences, e1_distance, e2_distance, grammar, shortest_path=generate_features(data['sentence_vi'])
             label=list(data['relationship'])
             label=[x for i, x in enumerate(label) if i not in SKIP] #dev only
             with open('data/'+type+'_features.json', 'w') as w:
@@ -360,9 +357,9 @@ if __name__ == "__main__":
             label=data['label']
 
         if type=='train':
-            Encoder = RE_DataEncoder(vocab_size, max_len, sentences, grammar, label)
+            Encoder = RE_DataEncoder(vocab_size, max_len, org_max_len, grammar, label)
 
-        sentences_np, e1_distance_np, e2_distance_np, grammar_np, shortest_path_np = Encoder.encode(sentences,
+        input_ids_np , mask_ids_np, e1_distance_np, e2_distance_np, grammar_np, shortest_path_np = Encoder.encode(sentences,
                                                                                                     e1_distance,
                                                                                                     e2_distance,
                                                                                                     grammar,
@@ -370,7 +367,7 @@ if __name__ == "__main__":
                                                                                                     )
         label_np=Encoder.encode_label(label)
 
-        all_features=np.array([sentences_np, e1_distance_np, e2_distance_np, grammar_np, shortest_path_np])
+        all_features=np.array([input_ids_np , mask_ids_np, e1_distance_np, e2_distance_np, grammar_np, shortest_path_np])
         np.save('data/X_'+type+'.npy', all_features)
         np.save('data/y_'+type+'.npy', label_np)
 
@@ -378,4 +375,70 @@ if __name__ == "__main__":
         with open('data/data_encoder.obj', 'wb') as f:
             pickle.dump(Encoder, f)
 
-# all_features[0].shape
+# with open('data/'+'train'+'_features.json', 'r') as r:
+#                 data=json.load(r)
+# sentences=data['sentences']
+# e1_distance=data['e1_distance']
+# e2_distance=data['e2_distance']
+# grammar=data['grammar']
+# shortest_path=data['shortest_path']
+# label=data['label']
+
+# #FIND VOCAB SIZE
+# tokenizer = Tokenizer(num_words=1, filters='!"#$%&()*+,-./:;=?@[]^`{|}~', lower=True, oov_token=1) # bo dau _
+# tokenizer.fit_on_texts(sentences)
+# word_index = tokenizer.word_index
+# word_size = len(word_index)
+# word_size
+
+# #FIND MAX LEN
+# import seaborn as sns
+# print(max([len(x.split()) for x in sentences]))
+# sns.histplot([len(x.split()) for x in sentences]);
+
+# Commented out IPython magic to ensure Python compatibility.
+# %cd /content/drive/MyDrive/thesis-relation-extraction-vn/
+
+def phobert_embedding(input_ids, input_mask):
+    with torch.no_grad():
+        features = phobert_model(input_ids=input_ids, attention_mask=input_mask)['last_hidden_state']  # Models outputs are now tuples
+    # result from the feature
+    # last_hidden_state — Sequence of hidden-states at the output of the last layer of the model.
+    # pooler_output — Last layer hidden-state of the first token of the sequence
+    # hidden_states (optional, returned when output_hidden_states=True is passed or when config.output_hidden_states=True) – Hidden-states of the model at the output of each layer plus the initial embedding outputs.
+    # attentions (optional, returned when output_attentions=True is passed or when config.output_attentions=True) – Attention weights after the attention softmax used to compute the weighted average in the self-attention heads.
+    return features
+
+X_train = np.load('data/X_train.npy')
+y_train = np.load('data/y_train.npy')
+X_test = np.load('data/X_test.npy')
+y_test = np.load('data/y_test.npy')
+
+sentence_emb=[]
+for partition in range(0, len(X_train[0]), 1000):
+    max_of_partition=min(len(X_train[0]), partition+1000)
+    print('from ', partition, ' to ', max_of_partition)
+    sentence_emb.append(phobert_embedding(
+        torch.tensor(X_train[0][partition:max_of_partition]),
+        torch.tensor(X_train[1][partition:max_of_partition])
+    )) #22m
+
+torch.save(torch.cat(sentence_emb, dim=0), 'data/sentence_emb_train_tensor.pt')
+
+sentence_emb=[]
+for partition in range(0, len(X_test[0]), 1000):
+    max_of_partition=min(len(X_test[0]), partition+1000)
+    print('from ', partition, ' to ', max_of_partition)
+    sentence_emb.append(phobert_embedding(
+        torch.tensor(X_test[0][partition:max_of_partition]),
+        torch.tensor(X_test[1][partition:max_of_partition])
+    )) #22m
+
+torch.save(torch.cat(sentence_emb, dim=0), 'data/sentence_emb_test_tensor.pt')
+
+# print(torch.tensor([tokenizer.encode('lịch')]))
+# print(torch.tensor([tokenizer.encode('sử')]))
+# print(torch.tensor([tokenizer.encode('lịch sử')]))
+# print(torch.tensor([tokenizer.encode('lịch_sử')]))
+# print(torch.tensor([tokenizer.encode('lịch_hả')]))
+# print(torch.tensor([tokenizer.encode('lịch|sử')]))
