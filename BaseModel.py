@@ -5,6 +5,9 @@ class BaseModel(ABC):
     @abstractmethod
     def build_model(self):
         pass
+
+    def __init__(self, max_len):
+        self.max_len = max_len
         
 
     def predict(self, X):
@@ -30,8 +33,8 @@ class BaseModel(ABC):
         history = self.model.fit([X_i for X_i in X], 
                     y, 
                     epochs=epochs,
-                    batch_size=32,
-                    validation_split=0.1)
+                    batch_size=32)
+                    # validation_split=0.1)
         
 
     def evaluate(self, X_test, y_test, dict_labels):
