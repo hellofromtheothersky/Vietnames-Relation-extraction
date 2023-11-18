@@ -14,6 +14,8 @@
 
 # ! pip3 install transformers
 
+import os
+
 import torch
 from transformers import AutoTokenizer
 
@@ -124,7 +126,8 @@ class RE_DataEncoder():
         return label
 
 if __name__ == "__main__":
-
+    os.chdir('/content/drive/MyDrive/thesis-relation-extraction-vn')
+    
     phobert_tokenizer = AutoTokenizer.from_pretrained("vinai/phobert-base-v2")
 
     vocab_size=11664

@@ -15,12 +15,12 @@
 # ! pip3 install py_vncorenlp
 
 import py_vncorenlp
-vncorenlp_md = py_vncorenlp.VnCoreNLP(save_dir='/content/drive/MyDrive/thesis-relation-extraction-vn/vncorenlp/')
 import pandas as pd
 import numpy as np
 import re
 import json
 import pickle
+import os
 
 import networkx as nx
 from networkx import NetworkXNoPath
@@ -96,7 +96,7 @@ def split_entity_and_create_edges_ver2(org_sentence):
     #tokenize
     # print(sentence)
     words_analysis=vncorenlp_md.annotate_text(sentence)[0]
-    tokens=[x['wordForm'] for x in words_analysis ]
+    tokens=[x['wordForm'] for x in words_analysis if x['wordForm']!='(' and x['wordForm']!=')']
     # print(tokens)
     #create dependency edges
     edges=[[x['index']-1, x['head']-1, x['depLabel'], x['wordForm']] for x in words_analysis]
@@ -132,7 +132,7 @@ def split_entity_and_create_edges_ver2(org_sentence):
     epos[1][0]=mapping[epos_tmp[2]]
     epos[1][1]=mapping[epos_tmp[3]]
 
-    return {'sentence': ' '.join(tokens), 'epos': epos, 'tokens': token, 'edges': precessed_edges}
+    return {'sentence': ' '.join(tokens), 'epos': epos, 'tokens': tokens, 'edges': precessed_edges}
 
 
 def create_relative_distance(sentence_data):
@@ -214,6 +214,10 @@ def generate_features(sentences):
     return sentences, e1_distance, e2_distance, grammar, shortest_path
 
 if __name__ == "__main__":
+    os.chdir('/content/drive/MyDrive/thesis-relation-extraction-vn')
+
+    vncorenlp_md = py_vncorenlp.VnCoreNLP(save_dir='/content/drive/MyDrive/thesis-relation-extraction-vn/vncorenlp/')
+    
     for type in ['train', 'test']:
         data = pd.read_csv('data/'+type+'.csv')
 

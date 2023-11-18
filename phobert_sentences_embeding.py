@@ -18,6 +18,8 @@ import torch
 from transformers import AutoModel
 import numpy as np
 
+import os
+
 def phobert_embedding(input_ids, input_mask):
     with torch.no_grad():
         features = phobert_model(input_ids=input_ids, attention_mask=input_mask)['last_hidden_state']  # Models outputs are now tuples
@@ -29,6 +31,8 @@ def phobert_embedding(input_ids, input_mask):
     return features
 
 if __name__ == "__main__":
+    os.chdir('/content/drive/MyDrive/thesis-relation-extraction-vn')
+
     phobert_model = AutoModel.from_pretrained("vinai/phobert-base-v2")
     X_train = np.load('data/X_train.npy')
     y_train = np.load('data/y_train.npy')
