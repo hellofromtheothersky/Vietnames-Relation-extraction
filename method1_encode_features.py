@@ -36,13 +36,18 @@ class RE_DataEncoder():
         self.max_len=max_len
         self.org_max_len=org_max_len
         self.vocab_size=vocab_size
-
-        #for the grammar
+        
+        #edges=[[x['index']-1, x['head']-1, x['depLabel'], x['posTag'], x['wordForm']] for x in words_analysis]
+        #for the grammar and pos tag
         grammar_type=[]
+        postag=[]
         for edges in grammar_train:
             grammar_type.extend([x[2] for x in edges])
+            postag.extend([x[3] for x in edges])
         grammar_type=list(set(grammar_type))
+        postag=list(set(postag))
         self.grammar2idx={v:i+1 for i, v in enumerate(grammar_type)}
+        self.postag2idx={v:i+1 for i, v in enumerate(postag)}
 
         #for the label
         self.lbencoder = LabelEncoder().fit(label_train)
@@ -91,6 +96,23 @@ class RE_DataEncoder():
         return grammar_matrix
 
 
+    def encode_postags(self, grammars):
+        postag_matrix=[]
+        for edge_list in grammar:
+            n=len(edge_list)
+            for i in range(len(edge_list)):
+                try:
+                    edge_list[i][3]=self.postag2idx[edge_list[i][3]]
+                except:
+                    #edge_list[i][3]=self.postag2idx['ROOT']
+                    edge_list[i][3]=0
+            matrix=[x[3] for x in edge_list]
+            postag_matrix.append(matrix)
+
+        postag_matrix=pad_sequences(postag_matrix, maxlen=self.max_len, value=0, padding='post')
+        return postag_matrix
+
+
     def encode_SDP(self, shortest_path):
         for i in range(len(shortest_path)):
             for j in range(len(shortest_path[i])):
@@ -113,10 +135,13 @@ class RE_DataEncoder():
         #grammar relantion
         grammar_matrix=self.encode_grammars(grammar)
 
+        #pos tag
+        postag_matrix=self.encode_postags(grammar)
+
         #shortest path
         shortest_path=self.encode_SDP(shortest_path)
 
-        return input_ids, mask_ids, e1_distances, e2_distances, grammar_matrix, shortest_path
+        return input_ids, mask_ids, e1_distances, e2_distances, grammar_matrix, postag_matrix, shortest_path
 
 
     def encode_label(self, label_name):
@@ -126,10 +151,10 @@ class RE_DataEncoder():
         return label
 
 if __name__ == "__main__":
-    os.chdir('/content/drive/MyDrive/thesis-relation-extraction-vn')
-    
     phobert_tokenizer = AutoTokenizer.from_pretrained("vinai/phobert-base-v2")
 
+    os.chdir('/content/drive/MyDrive/thesis-relation-extraction-vn')
+    
     vocab_size=11664
     max_len = 40
     org_max_len = 90
@@ -141,14 +166,14 @@ if __name__ == "__main__":
         sentences=data['sentences']
         e1_distance=data['e1_distance']
         e2_distance=data['e2_distance']
-        grammar=data['grammar']
+        grammar=data['grammar'] #    edges=[[x['index']-1, x['head']-1, x['depLabel'], x['posTag'], x['wordForm']] for x in words_analysis]
         shortest_path=data['shortest_path']
         label=data['label']
 
         if type=='train':
             Encoder = RE_DataEncoder(vocab_size, max_len, org_max_len, grammar, label)
 
-        input_ids_np , mask_ids_np, e1_distance_np, e2_distance_np, grammar_np, shortest_path_np = Encoder.encode(sentences,
+        input_ids_np , mask_ids_np, e1_distance_np, e2_distance_np, grammar_np, postag_np, shortest_path_np = Encoder.encode(sentences,
                                                                                                     e1_distance,
                                                                                                     e2_distance,
                                                                                                     grammar,
@@ -156,7 +181,7 @@ if __name__ == "__main__":
                                                                                                     )
         label_np=Encoder.encode_label(label)
 
-        all_features=np.array([input_ids_np , mask_ids_np, e1_distance_np, e2_distance_np, grammar_np, shortest_path_np])
+        all_features=np.array([input_ids_np , mask_ids_np, e1_distance_np, e2_distance_np, grammar_np, postag_np, shortest_path_np])
         np.save('data/X_'+type+'.npy', all_features)
         np.save('data/y_'+type+'.npy', label_np)
 

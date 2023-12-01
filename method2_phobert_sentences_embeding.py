@@ -35,8 +35,8 @@ if __name__ == "__main__":
 
     os.chdir('/content/drive/MyDrive/thesis-relation-extraction-vn')
 
-    X_train = np.load('data/X_train.npy')
-    X_test = np.load('data/X_test.npy')
+    X_train = np.load('data/X_train_method2.npy')
+    X_test =   np.load('data/X_test_method2.npy')
 
     sentence_emb=[]
     for partition in range(0, len(X_train[0]), 1000):
@@ -46,7 +46,7 @@ if __name__ == "__main__":
             torch.tensor(X_train[0][partition:max_of_partition]),
             torch.tensor(X_train[1][partition:max_of_partition])
         )) #22m
-    torch.save(torch.cat(sentence_emb, dim=0), 'data/sentence_emb_train_tensor.pt')
+    torch.save(torch.cat(sentence_emb, dim=0), 'data/sentence_emb_train_tensor_method2.pt')
 
     sentence_emb=[]
     for partition in range(0, len(X_test[0]), 1000):
@@ -56,7 +56,7 @@ if __name__ == "__main__":
             torch.tensor(X_test[0][partition:max_of_partition]),
             torch.tensor(X_test[1][partition:max_of_partition])
         ))
-    torch.save(torch.cat(sentence_emb, dim=0), 'data/sentence_emb_test_tensor.pt')
+    torch.save(torch.cat(sentence_emb, dim=0), 'data/sentence_emb_test_tensor_method2.pt')
 
 # print(torch.tensor([tokenizer.encode('lịch')]))
 # print(torch.tensor([tokenizer.encode('sử')]))

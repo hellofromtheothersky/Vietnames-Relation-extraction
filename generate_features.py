@@ -60,7 +60,7 @@ def split_entity_and_create_edges(org_sentence):
     words_analysis=vncorenlp_md.annotate_text(sentence)[0]
     tokens=[x['wordForm'] for x in words_analysis]
     #create dependency edges
-    edges=[[x['index']-1, x['head']-1, x['depLabel'], x['wordForm']] for x in words_analysis]
+    edges=[[x['index']-1, x['head']-1, x['depLabel'], x['posTag'], x['wordForm']] for x in words_analysis]
 
     seps=['<e1>', '</e1>', '<e2>', '</e2>']
     epos_temp=[] # start, end of two entities
@@ -99,7 +99,7 @@ def split_entity_and_create_edges_ver2(org_sentence):
     tokens=[x['wordForm'] for x in words_analysis if x['wordForm']!='(' and x['wordForm']!=')']
     # print(tokens)
     #create dependency edges
-    edges=[[x['index']-1, x['head']-1, x['depLabel'], x['wordForm']] for x in words_analysis]
+    edges=[[x['index']-1, x['head']-1, x['depLabel'], x['posTag'], x['wordForm']] for x in words_analysis]
     # print(edges)
 
     #sentence have special character (, ) -> edges have this tokens -> remove (, ) from the edges -> modify the index in edges
@@ -214,11 +214,12 @@ def generate_features(sentences):
     return sentences, e1_distance, e2_distance, grammar, shortest_path
 
 if __name__ == "__main__":
-    os.chdir('/content/drive/MyDrive/thesis-relation-extraction-vn')
-
     vncorenlp_md = py_vncorenlp.VnCoreNLP(save_dir='/content/drive/MyDrive/thesis-relation-extraction-vn/vncorenlp/')
     
+    os.chdir('/content/drive/MyDrive/thesis-relation-extraction-vn')
+
     for type in ['train', 'test']:
+        SKIP=[]
         data = pd.read_csv('data/'+type+'.csv')
 
         sentences, e1_distance, e2_distance, grammar, shortest_path=generate_features(data['sentence_vi'])
